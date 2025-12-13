@@ -28,10 +28,10 @@ BASE_PATH = 'D:/PycharmProjects/image-processing/targil-bait-1/'
 OUTPUT_DIR = 'annotated_images'
 
 # Tunable parameters
-HOUGH_NUM_PEAKS = 500         # Max number of line segments to keep (increased)
-HOUGH_THRESHOLD_RATIO = 0.3   # Not used with HoughLinesP
+HOUGH_NUM_PEAKS = 100         # Max number of line segments to keep (increased)
+HOUGH_THRESHOLD_RATIO = 0.1   # Threshold ratio for peak detection (lowered)
 MIN_LINE_LENGTH = 70          # Minimum line length in pixels (higher to avoid grid/text)
-ANGLE_TOLERANCE = 3           # Degrees for horizontal/vertical classification (strict)
+ANGLE_TOLERANCE = 10          # Degrees for horizontal/vertical classification (relaxed)
 LINE_COLOR = (0, 0, 255)      # Red color in BGR format (OpenCV uses BGR, not RGB)
 LINE_THICKNESS = 5            # Line thickness in pixels
 
@@ -382,81 +382,140 @@ def preprocess_image(image_path):
 def detect_edges_for_hough(image):
     """
     Generate binary edge map focusing on strong document boundaries.
-    Uses heavy blur and morphological operations to eliminate grid patterns and text.
+    Uses Morphological Closing to suppress text (dark details) while keeping boundaries.
     """
-    # Apply strong Gaussian blur to reduce grid patterns and text
-    blurred = cv2.GaussianBlur(image, (11, 11), 0)
+    # 1. Gaussian Blur to reduce noise
+    blurred = cv2.GaussianBlur(image, (5, 5), 0)
 
-    # Use balanced Canny thresholds
-    # Lower threshold = 90, Upper threshold = 180
-    edges = cv2.Canny(blurred, 90, 180)
+    # 2. Morphological Closing to remove text
+    # This "closes" dark holes/lines (text) on the light background (paper)
+    # Using a 5x5 kernel effectively erases thin text strokes
+    kernel = np.ones((5, 5), np.uint8)
+    closed = cv2.morphologyEx(blurred, cv2.MORPH_CLOSE, kernel, iterations=2)
 
-    # Apply morphological closing to fill in grid patterns and connect boundaries
-    kernel = np.ones((7, 7), np.uint8)
-    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+    # 3. Canny Edge Detection
+    # Edges should now mostly be the document boundaries
+    edges = cv2.Canny(closed, 50, 150)
 
-    # Apply dilation to strengthen boundaries
-    edges = cv2.dilate(edges, kernel, iterations=2)
-
-    # Apply erosion to thin back
-    edges = cv2.erode(edges, kernel, iterations=1)
-
+    # 4. Morphological cleanup on the edges
+    # Dilate to connect broken boundary segments
+    clean_kernel = np.ones((3, 3), np.uint8)
+    edges = cv2.dilate(edges, clean_kernel, iterations=1)
+    
     return edges
+
+
+def find_line_segment_on_edge_map(rho, theta_deg, edge_image, min_length=MIN_LINE_LENGTH, max_gap=20):
+    """
+    Find the active segment of the line on the edge map.
+    Trims the infinite Hough line to the actual edge pixels.
+    """
+    height, width = edge_image.shape
+
+    # Get scanned line endpoints (clipped to image)
+    x1, y1, x2, y2 = convert_polar_to_cartesian(rho, theta_deg, (height, width))
+
+    # Get all points on the line
+    dist = np.hypot(x2 - x1, y2 - y1)
+    if dist == 0:
+        return None
+
+    num_points = int(dist)
+    if num_points == 0:
+        return None
+
+    xs = np.linspace(x1, x2, num_points)
+    ys = np.linspace(y1, y2, num_points)
+
+    # Extract edge values using integer indexing
+    xs_int = np.clip(np.round(xs).astype(int), 0, width - 1)
+    ys_int = np.clip(np.round(ys).astype(int), 0, height - 1)
+
+    values = edge_image[ys_int, xs_int]
+
+    # Find segments (value > 0 is edge)
+    is_edge = values > 0
+
+    segments = []
+    current_start = -1
+    gap_count = 0
+
+    for i in range(len(is_edge)):
+        if is_edge[i]:
+            if current_start == -1:
+                current_start = i
+            gap_count = 0  # Reset gap count
+        else:
+            if current_start != -1:
+                gap_count += 1
+                if gap_count > max_gap:
+                    # End of segment
+                    # The segment ended 'gap_count' steps ago
+                    end_idx = i - gap_count
+                    if (end_idx - current_start) >= min_length:
+                        segments.append((current_start, end_idx))
+                    current_start = -1
+                    gap_count = 0
+
+    # Check if segment continues to the end
+    if current_start != -1:
+        end_idx = len(is_edge) - 1 - gap_count
+        if (end_idx - current_start) >= min_length:
+            segments.append((current_start, end_idx))
+
+    if not segments:
+        return None
+
+    # Return the longest segment
+    # (In a more advanced version, we might return all segments,
+    # but for document boundaries, we usually expect one main line per rho/theta)
+    longest_segment = max(segments, key=lambda s: s[1] - s[0])
+    start_idx, end_idx = longest_segment
+
+    final_x1 = int(xs[start_idx])
+    final_y1 = int(ys[start_idx])
+    final_x2 = int(xs[end_idx])
+    final_y2 = int(ys[end_idx])
+
+    # Recalculate length
+    length = np.hypot(final_x2 - final_x1, final_y2 - final_y1)
+
+    return final_x1, final_y1, final_x2, final_y2, length
 
 
 def detect_lines_hough(edge_image, num_peaks=HOUGH_NUM_PEAKS, threshold_ratio=HOUGH_THRESHOLD_RATIO):
     """
-    Detect line segments using Probabilistic Hough Transform.
-    This finds actual line segments (with endpoints) rather than infinite lines,
-    which is better for detecting document boundaries.
+    Detect lines using the manual Hough Transform implementation.
     """
-    # Use HoughLinesP to get line segments directly
-    # Parameters:
-    # - rho: 1 pixel resolution
-    # - theta: 1 degree resolution (pi/180)
-    # - threshold: minimum votes
-    # - minLineLength: minimum line length
-    # - maxLineGap: maximum gap between line segments to treat as single line
+    # 1. Run Hough Transform
+    accumulator, rhos, thetas = hough_line_transform(edge_image)
 
-    min_line_length = 60  # Minimum length for a document edge
-    max_line_gap = 30     # Maximum gap to connect segments
-    threshold = 30        # Minimum votes (lower to detect more)
+    # 2. Find Peaks
+    # We use a relative threshold based on the maximum vote in the accumulator
+    max_vote = np.max(accumulator)
+    threshold = threshold_ratio * max_vote
 
-    lines = cv2.HoughLinesP(edge_image, rho=1, theta=np.pi/180,
-                            threshold=threshold,
-                            minLineLength=min_line_length,
-                            maxLineGap=max_line_gap)
+    peaks = find_peaks(accumulator, rhos, thetas, threshold=threshold, num_peaks=num_peaks)
 
-    # Convert to our format: list of (rho, theta, votes) but for segments we'll use (x1,y1,x2,y2)
-    # Since HoughLinesP returns segments, we'll return them as-is
-    if lines is None:
-        return []
+    # 3. Convert to format expected by create_lines_dataframe
+    lines_output = []
+    
+    # Create a thickened edge map for robust tracing
+    # This helps when the mathematical line is slightly off the pixel grid or the edge is thin
+    kernel = np.ones((3, 3), np.uint8)
+    trace_map = cv2.dilate(edge_image, kernel, iterations=1)
+    
+    for rho, theta_deg, votes in peaks:
+        # Find the actual segment on the edge map
+        # Reduced max_gap to 10 to prevent bridging distinct document boundaries or text blocks
+        result = find_line_segment_on_edge_map(rho, theta_deg, trace_map, min_length=50, max_gap=10)
+        
+        if result:
+            x1, y1, x2, y2, length = result
+            # We pass 'length' (pixel length) as the vote strength for sorting later
+            lines_output.append((x1, y1, x2, y2, theta_deg, rho, length))
 
-    # HoughLinesP returns [[[x1, y1, x2, y2]], [[x1, y1, x2, y2]], ...]
-    # Flatten and convert to our format
-    line_segments = []
-    for line in lines:
-        x1, y1, x2, y2 = line[0]
-        # Calculate rho and theta for compatibility with rest of code
-        dx = x2 - x1
-        dy = y2 - y1
-        theta_rad = np.arctan2(dy, dx)
-        theta_deg = np.rad2deg(theta_rad)
-
-        # Calculate rho (distance from origin)
-        # Use midpoint of line
-        x_mid = (x1 + x2) / 2
-        y_mid = (y1 + y2) / 2
-        rho = x_mid * np.cos(theta_rad) + y_mid * np.sin(theta_rad)
-
-        # Store as (x1, y1, x2, y2, theta, rho) for now
-        # We'll use a higher "votes" value for longer lines
-        length = np.sqrt(dx**2 + dy**2)
-        line_segments.append((x1, y1, x2, y2, theta_deg, rho, int(length)))
-
-    # Sort by length (longer lines first) and take top N
-    line_segments.sort(key=lambda x: x[6], reverse=True)
-    return line_segments[:num_peaks]
+    return lines_output
 
 
 # ============================================================================
