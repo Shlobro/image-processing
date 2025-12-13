@@ -1,0 +1,58 @@
+Exercise 1: Extracting and Cropping Documents from a "Digital Archive"
+Date: December 15, 2025
+Background
+Your goal is to write automated code that identifies the boundaries separating different documents within a scanned image and crops them into separate images.
+Exercise Objectives
+
+Implement edge detection algorithms.
+Use the Hough Transform to detect straight lines, utilizing the code implemented in the class exercise. Do not use OpenCV.
+Manage tabular data using the Pandas library.
+Perform array manipulation (slicing) to crop images.
+
+Input Data
+You have access to files containing scans of documents (images attached to the exercise). These images feature textures of old paper and stains.
+Execution Instructions (Step-by-Step)
+You must write a program in Python that performs the following steps:
+
+Loading and Preprocessing
+Load the image.
+Convert the image to grayscale.
+Apply noise filtering if necessary.
+
+Edge Detection
+Use the Canny algorithm (or a similar one learned in class) to generate a Binary Edge Map.
+Ensure the threshold is adjusted so that only strong contours (the boundaries between documents) are preserved.
+You may need to apply morphological operations before or after, but use them minimally.
+
+Line Detection Using Hough Transform
+This is the core of the exercise. Use the HoughLines code from the class exercise to find straight lines in the image – specifically, the frames of the "documents" in each image.
+Tune the parameters (rho, theta, threshold, minLineLength) so that the algorithm captures the lines that separate the documents.
+
+Data Management with Pandas
+Store the coordinates of the detected lines (x1, y1, x2, y2) in a Pandas DataFrame.
+Display the DataFrame as intermediate output (for debugging and verification purposes).
+
+Image Cropping
+Based on the lines found in the DataFrame, calculate the cropping points.
+Save the images with the detected lines drawn on them.
+
+
+Example Workflow (Pseudo-Code Logic)
+Python# 1. Read Image -> Grayscale -> Blur
+# 2. Edges = Canny(Image)
+# 3. Lines = HoughLinesP(Edges)
+# 4. Save Lines to Pandas DataFrame:
+#    df = pd.DataFrame(Lines, columns=['x1', 'y1', 'x2', 'y2'])
+# 5. Filter df to find dividing lines (horizontal/vertical)
+# 6. Plot the dividing lines (horizontal/vertical)
+Submission Guidelines
+You must submit a single ZIP file named with your ID number. The compressed file must contain exactly the following structure:
+
+Main_IDNUMBER.py: The complete code file. The code should be well-documented and readable. Replace "IDNUMBER" with your actual ID number.
+After running the code, the following will be generated:
+lines_data.csv: A CSV file containing the DataFrame created for the input images. The columns must be: filename, x1, y1, x2, y2.
+annotated_images: A folder containing the original input images, with the lines (drawn in a prominent color) that your algorithm detected using Hough Transform overlaid on them. The file names in this folder should be [Original_Name]_annotated.jpg.
+
+
+Output Demonstration
+image1.png

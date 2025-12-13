@@ -1,0 +1,201 @@
+Exercise 1 – Extracting and Cropping Documents from a “Digital Archive”
+
+Date: 15.12.2025
+
+Background
+
+The goal of this exercise is to develop an automatic program that identifies the boundaries separating different documents within a scanned image, and then extracts (crops) each document into a separate image.
+
+The scanned images simulate a digital archive and may contain:
+
+Old paper textures
+
+Stains and noise
+
+Multiple documents scanned together on a single page
+
+Your task is to reliably detect the dividing lines between documents and segment them accordingly.
+
+Exercise Objectives
+
+In this exercise, you will practice and demonstrate the following skills:
+
+Applying edge detection algorithms
+
+Using the Hough Transform to detect straight lines
+
+You must use the Hough implementation provided in the class exercise
+
+OpenCV must NOT be used
+
+Managing tabular data using the Pandas library
+
+Array manipulation (slicing) for cropping image regions
+
+Input Data
+
+You are provided with image files containing scanned documents (attached to the exercise).
+
+Characteristics of the images:
+
+Old paper texture
+
+Visual noise and stains
+
+Multiple documents per image
+
+Implementation Instructions (Step-by-Step)
+
+You are required to write a Python program that performs the following steps:
+
+1. Loading and Preprocessing
+
+Load the input image.
+
+Convert the image to grayscale.
+
+Apply noise reduction if necessary (e.g., blurring).
+
+2. Edge Detection
+
+Use the Canny edge detection algorithm (or a similar algorithm taught in class) to generate a binary edge map.
+
+Carefully tune the thresholds so that:
+
+Only strong edges are preserved
+
+The edges corresponding to document boundaries are emphasized
+
+You may use morphological operations (before or after edge detection), but:
+
+Use them sparingly
+
+Avoid unnecessary complexity
+
+3. Line Detection Using the Hough Transform
+
+This is the core of the exercise.
+
+Use HoughLines / HoughLinesP
+
+Only the code provided in the class exercise
+
+Do not use OpenCV
+
+Detect straight lines in the image corresponding to the document borders.
+
+Carefully tune the Hough parameters:
+
+rho
+
+theta
+
+threshold
+
+minLineLength
+
+The goal is to detect only the lines that separate documents, not irrelevant edges.
+
+4. Data Management with Pandas
+
+Store the detected line coordinates in a Pandas DataFrame.
+
+Each line should be represented by:
+
+x1, y1, x2, y2
+
+Display the DataFrame as an intermediate output for:
+
+Debugging
+
+Verification
+
+5. Image Cropping
+
+Based on the detected lines stored in the DataFrame:
+
+Compute the cropping boundaries
+
+Crop the original image into separate document images.
+
+Save the cropped results.
+
+Also save images with the detected lines drawn on top.
+
+Example Workflow (Pseudo-Code Logic)
+# 1. Read image -> convert to grayscale -> apply blur
+# 2. edges = Canny(image)
+# 3. lines = HoughLinesP(edges)
+# 4. Save lines to Pandas DataFrame:
+#    df = pd.DataFrame(lines, columns=['x1', 'y1', 'x2', 'y2'])
+# 5. Filter DataFrame to identify dividing lines (horizontal / vertical)
+# 6. Draw the dividing lines on the image for visualization
+
+Submission Guidelines
+
+You must submit a single ZIP file named exactly as your ID number.
+
+The ZIP file must contain exactly the following structure:
+
+Required Files and Folders
+1. Main Python Script
+Main_IDNUMBER.py
+
+
+Contains the complete implementation
+
+Code must be:
+
+Clear
+
+Well-documented
+
+Readable
+
+Replace IDNUMBER with your actual ID number.
+
+2. Generated Output (After Running the Code)
+
+After executing Main_IDNUMBER.py, the following must be generated:
+
+a. CSV File
+lines_data.csv
+
+
+Contains the Pandas DataFrame with detected lines
+
+Required columns:
+
+filename
+
+x1
+
+y1
+
+x2
+
+y2
+
+b. Annotated Images Folder
+annotated_images/
+
+
+Contains the original input images
+
+Detected Hough lines must be drawn on the images in a clearly visible color
+
+File naming format:
+
+[Original_Name]_annotated.jpg
+
+Output Demonstration
+
+Your final submission should clearly demonstrate:
+
+Correct detection of document boundaries
+
+Proper storage of detected lines
+
+Accurate cropping of documents
+
+Clear visual annotations of detected lines
