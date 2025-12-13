@@ -20,18 +20,19 @@ import numpy as np
 import pandas as pd
 import os
 import cv2  # Only for loading images and grayscale conversion
+from scipy.ndimage import gaussian_filter, binary_closing, binary_dilation
 
 # ============================================================================
 # CONSTANTS AND CONFIGURATION
 # ============================================================================
 BASE_PATH = 'D:/PycharmProjects/image-processing/targil-bait-1/'
-OUTPUT_DIR = 'annotated_images'
+OUTPUT_DIR = os.path.join(BASE_PATH, 'annotated_images')
 
 # Tunable parameters
-HOUGH_NUM_PEAKS = 100         # Max number of line segments to keep (increased)
-HOUGH_THRESHOLD_RATIO = 0.1   # Threshold ratio for peak detection (lowered)
-MIN_LINE_LENGTH = 70          # Minimum line length in pixels (higher to avoid grid/text)
-ANGLE_TOLERANCE = 10          # Degrees for horizontal/vertical classification (relaxed)
+HOUGH_NUM_PEAKS = 100         # Max number of line segments to keep
+HOUGH_THRESHOLD_RATIO = 0.1   # Threshold ratio for peak detection
+MIN_LINE_LENGTH = 70          # Minimum line length in pixels
+ANGLE_TOLERANCE = 2           # Degrees for horizontal/vertical classification (strict)
 LINE_COLOR = (0, 0, 255)      # Red color in BGR format (OpenCV uses BGR, not RGB)
 LINE_THICKNESS = 5            # Line thickness in pixels
 
@@ -39,7 +40,7 @@ LINE_THICKNESS = 5            # Line thickness in pixels
 RESIZE_FACTOR = 0.25          # Resize images to 25% for faster processing
 
 # Deduplication thresholds
-RHO_THRESHOLD = 15            # Similar lines must differ by at least this in rho
+RHO_THRESHOLD = 5             # Similar lines must differ by at least this in rho
 THETA_THRESHOLD = 5           # Similar lines must differ by at least this in theta
 
 # Hough Transform constants
@@ -381,26 +382,43 @@ def preprocess_image(image_path):
 
 def detect_edges_for_hough(image):
     """
-    Generate binary edge map focusing on strong document boundaries.
-    Uses Morphological Closing to suppress text (dark details) while keeping boundaries.
+    Generate binary edge map using only Scipy/Numpy (No OpenCV).
+    Strategy:
+    1. Gaussian Blur (Scipy)
+    2. Thresholding (Numpy) to separate Document vs Background
+    3. Morphological Closing (Scipy) to make document solid
+    4. Gradient/Edge detection (Scipy Convolve)
     """
     # 1. Gaussian Blur to reduce noise
-    blurred = cv2.GaussianBlur(image, (5, 5), 0)
+    # sigma=1 is roughly equivalent to a 3x3 or 5x5 kernel
+    blurred = gaussian_filter(image.astype(float), sigma=1)
 
-    # 2. Morphological Closing to remove text
-    # This "closes" dark holes/lines (text) on the light background (paper)
-    # Using a 5x5 kernel effectively erases thin text strokes
-    kernel = np.ones((5, 5), np.uint8)
-    closed = cv2.morphologyEx(blurred, cv2.MORPH_CLOSE, kernel, iterations=2)
+    # 2. Thresholding
+    # Assumption: Background is White (high value), Document is darker.
+    # We select pixels that are NOT white (i.e., the document).
+    # Threshold = 245 (allows for very light paper to still be detected)
+    binary_mask = (blurred < 245).astype(int)
 
-    # 3. Canny Edge Detection
-    # Edges should now mostly be the document boundaries
-    edges = cv2.Canny(closed, 50, 150)
+    # 3. Morphological Closing
+    # Connect text and internal details to form a solid blob
+    # Structure size 5x5
+    structure = np.ones((5, 5))
+    closed_mask = binary_closing(binary_mask, structure=structure).astype(int)
 
-    # 4. Morphological cleanup on the edges
-    # Dilate to connect broken boundary segments
-    clean_kernel = np.ones((3, 3), np.uint8)
-    edges = cv2.dilate(edges, clean_kernel, iterations=1)
+    # 4. Edge Detection using Sobel
+    # We want the boundary of this solid mask
+    from scipy.signal import convolve2d
+    
+    sobel_x = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]])
+    sobel_y = np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]])
+    
+    grad_x = convolve2d(closed_mask, sobel_x, mode='same', boundary='symm')
+    grad_y = convolve2d(closed_mask, sobel_y, mode='same', boundary='symm')
+    
+    magnitude = np.sqrt(grad_x**2 + grad_y**2)
+    
+    # Binarize edges
+    edges = (magnitude > 0).astype(np.uint8) * 255
     
     return edges
 
@@ -502,8 +520,8 @@ def detect_lines_hough(edge_image, num_peaks=HOUGH_NUM_PEAKS, threshold_ratio=HO
     
     # Create a thickened edge map for robust tracing
     # This helps when the mathematical line is slightly off the pixel grid or the edge is thin
-    kernel = np.ones((3, 3), np.uint8)
-    trace_map = cv2.dilate(edge_image, kernel, iterations=1)
+    # Using scipy binary_dilation instead of cv2.dilate
+    trace_map = binary_dilation(edge_image > 0, iterations=1).astype(np.uint8) * 255
     
     for rho, theta_deg, votes in peaks:
         # Find the actual segment on the edge map
@@ -554,10 +572,12 @@ def combine_all_results(all_dataframes):
     """Merge and save to CSV."""
     combined_df = pd.concat(all_dataframes, ignore_index=True)
     output_df = combined_df[['filename', 'x1', 'y1', 'x2', 'y2']].copy()
-    output_df.to_csv('lines_data.csv', index=False)
+    
+    output_path = os.path.join(BASE_PATH, 'lines_data.csv')
+    output_df.to_csv(output_path, index=False)
 
     print(f"\n{'='*60}")
-    print(f"Saved {len(output_df)} lines to lines_data.csv")
+    print(f"Saved {len(output_df)} lines to {output_path}")
     print('='*60)
 
     return output_df
