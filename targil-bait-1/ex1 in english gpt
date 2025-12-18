@@ -199,3 +199,5 @@ Proper storage of detected lines
 Accurate cropping of documents
 
 Clear visual annotations of detected lines
+
+YOU CAN ONLY USE CV for loading the image and converting to greyscale

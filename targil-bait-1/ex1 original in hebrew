@@ -58,3 +58,5 @@ Python
 ⦁	אחרי הרצת הקוד יווצר
 ⦁	lines_data.csv  קובץ CSV המכיל את ה-DataFrame שיצרתם עבור תמונות הקלט ( --  העמודות צריכות להיות: filename, x1, y1, x2, y2.
 ⦁	annotated_images תיקייה המכילה את תמונות הקלט המקוריות, כאשר עליהן משורטטים הקווים (בצבע בולט) שהאלגוריתם שלכם זיהה באמצעות Hough. שמות הקבצים בתיקייה זו יהיו [Original_Name]_annotated.jpg.
+
+YOU CAN ONLY USE CV for loading the image and converting to greyscale

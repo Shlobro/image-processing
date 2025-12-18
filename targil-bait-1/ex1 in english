@@ -55,4 +55,7 @@ annotated_images: A folder containing the original input images, with the lines 
 
 
 Output Demonstration
-image1.png
+image_1_output_example.png
+
+
+YOU CAN ONLY USE CV for loading the image and converting to greyscale
