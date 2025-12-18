@@ -84,6 +84,9 @@ class LineSegment:
             return 0.5 * (self.p1[1] + self.p2[1])
         raise ValueError(f"Unsupported orientation {orientation}")
 
+    def length(self) -> float:
+        return math.hypot(self.p1[0] - self.p2[0], self.p1[1] - self.p2[1])
+
 
 # =============================================================================
 # Image processing primitives (filters, gradients, Canny, Hough)
@@ -330,6 +333,7 @@ def detect_line_segments(
     threshold: int,
     max_peaks: int,
     neighborhood_size: Tuple[int, int],
+    min_length: float,
 ) -> List[LineSegment]:
     """Detect line segments using the custom Hough transform."""
     accumulator, rhos, thetas = hough_transform(edge_map, rho_step, theta_step)
@@ -342,7 +346,10 @@ def detect_line_segments(
         endpoints = line_to_segment(rho, theta, width, height)
         if endpoints is None:
             continue
-        segments.append(LineSegment(rho, theta, votes, endpoints[0], endpoints[1]))
+        segment = LineSegment(rho, theta, votes, endpoints[0], endpoints[1])
+        if segment.length() < min_length:
+            continue
+        segments.append(segment)
 
     return segments
 
@@ -479,17 +486,18 @@ def save_crops(
 @dataclass
 class PipelineConfig:
     blur_size: int = 5
-    blur_sigma: float = 1.6
-    canny_low_ratio: float = 0.08
-    canny_high_ratio: float = 0.25
+    blur_sigma: float = 1.8
+    canny_low_ratio: float = 0.1
+    canny_high_ratio: float = 0.3
     rho_step: float = 1.0
     theta_step: float = math.radians(1.0)
-    hough_threshold: int = 220
-    hough_peaks: int = 40
+    hough_threshold: int = 320
+    hough_peaks: int = 25
     hough_neighborhood: Tuple[int, int] = (35, 35)
-    orientation_tolerance_deg: float = 12.0
-    merge_tolerance_px: float = 35.0
+    orientation_tolerance_deg: float = 4.0
+    merge_tolerance_px: float = 60.0
     min_box_size_px: int = 120
+    min_line_length_px: float = 400.0
 
 
 class DocumentBoundaryDetector:
@@ -542,7 +550,14 @@ class DocumentBoundaryDetector:
                 threshold=self.config.hough_threshold,
                 max_peaks=self.config.hough_peaks,
                 neighborhood_size=self.config.hough_neighborhood,
+                min_length=self.config.min_line_length_px,
             )
+
+            segments = [
+                seg
+                for seg in segments
+                if seg.orientation(self.config.orientation_tolerance_deg) is not None
+            ]
 
             vertical_segments = [
                 seg
